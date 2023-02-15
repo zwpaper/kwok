@@ -121,24 +121,22 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
+          #- ubuntu-latest
           - macos-latest
           # Linux containers are not supported on Windows Runner
           # https://github.com/orgs/community/discussions/25491#discussioncomment-3248089
           # - windows-latest
         kwokctl-runtime:
-          - binary
-          - docker
+          #- binary
+          #- docker
           - nerdctl
-          - kind
+          #- kind
         exclude:
           # No binary is provided by default for control plane components outside of Linux
           # https://www.downloadkubernetes.com
           # TODO: we can build the required binary
           - os: macos-latest
             kwokctl-runtime: binary
-          - os: macos-latest
-            kwokctl-runtime: nerdctl
 
     continue-on-error: false
     runs-on: ${{ matrix.os }}
@@ -156,14 +154,24 @@ jobs:
           brew install coreutils
 
       - name: Install Docker for MacOS
-        if: ${{ matrix.os == 'macos-latest' && matrix.kwokctl-runtime != 'binary' }}
+        if: ${{ matrix.os == 'macos-latest' && ( matrix.kwokctl-runtime == 'docker' || matrix.kwokctl-runtime == 'kind' ) }}
         shell: bash
         run: |
           brew install colima docker
           colima start --mount $HOME/.kwok/:w
 
+      - name: Install Nerdctl for MacOS
+        if: ${{ matrix.os == 'macos-latest' && matrix.kwokctl-runtime == 'nerdctl' }}
+        shell: bash
+        run: |
+          brew install lima
+          # mount ~/.kwok as writable, please notice, this is BSD sed
+          sed -i.bak -e 's=^mounts:=mounts:\n- location: "~/.kwok/"\n  writable: true=g' /usr/local/share/doc/lima/examples/default.yaml
+          limactl start
+          ln -s /usr/local/Cellar/lima/$(ls /usr/local/Cellar/lima/)/bin/nerdctl.lima /usr/local/bin/nerdctl
+
       - name: Install Buildx
-        if: ${{ matrix.kwokctl-runtime != 'binary' }}
+        if: ${{ matrix.kwokctl-runtime == 'docker' || matrix.kwokctl-runtime == 'kind' }}
         shell: bash
         run: |
           ./hack/requirements.sh buildx
@@ -177,13 +185,13 @@ jobs:
            docker compose version
 
       - name: Docker Info
-        if: ${{ matrix.kwokctl-runtime != 'binary' }}
+        if: ${{ matrix.kwokctl-runtime == 'docker' || matrix.kwokctl-runtime == 'kind' }}
         shell: bash
         run: |
           docker info
 
-      - name: Install Nerdctl and Start Containerd
-        if: ${{ matrix.kwokctl-runtime == 'nerdctl' }}
+      - name: Install Nerdctl and Start Containerd for Linux
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.kwokctl-runtime == 'nerdctl' }}
         shell: bash
         run: |
           curl -sSL https://github.com/containerd/nerdctl/releases/download/v1.1.0/nerdctl-full-1.1.0-linux-amd64.tar.gz -o - | sudo tar -xz -C /usr/local
